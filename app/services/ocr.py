@@ -1,16 +1,18 @@
+import json
+
 from openai import OpenAI
 
 from app import config
+from app.models.receipt import Receipt, Article
 
 client = OpenAI(
     api_key=config.OpenaiSettings().OPENAI_API_KEY,
 )
 
-def make_prompt():
+def get_prompt():
     return """
         The text is in French, correction should be done in French.
         Extract structured information from the following receipt text using this JSON format, return only the JSON:
-        ```
         {
             "name": "",
             "date": "",
@@ -24,7 +26,7 @@ def make_prompt():
             ],
             "total_price": 0.0
         }
-        ```
+
         **Instructions:**
         
         - `name`: Store name if present. Skip otherwise.
@@ -42,8 +44,8 @@ def make_prompt():
         - Leave out any unrelated or non-item text (like totals, messages, VAT breakdowns, etc.).
         """
 
-def parse_ocr_text(base64_image):
-    prompt = make_prompt()
+def extract_data_from_receipt(base64_image) -> Receipt:
+    prompt = get_prompt()
     try:
         completion = client.responses.create(
             model="gpt-4.1",
@@ -66,4 +68,13 @@ def parse_ocr_text(base64_image):
         )
     except Exception as e:
         print(f"Error during OpenAI API call: {e}")
-    return completion.output[0].content[0].text
+    result = completion.output[0].content[0].text
+    parsed_result = json.loads(result)
+    articles = [Article(**article) for article in parsed_result["articles"]]
+    receipt = Receipt(
+        name=parsed_result["name"],
+        date=parsed_result["date"],
+        articles=articles,
+        total_price=parsed_result["total_price"]
+    )
+    return receipt
